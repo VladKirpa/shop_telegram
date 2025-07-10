@@ -117,8 +117,7 @@ def totalrevenue(message):
 def admin_panel(message):
     user_id = message.from_user.id
     
-    if not is_admin(user_id):  # Проверка, если не админ, то сообщаем, что доступ запрещен
-        bot.send_message(message.chat.id, "You don't have permission to access this panel.")
+    if not is_admin(user_id):
         return
     
     markup = types.InlineKeyboardMarkup()
@@ -198,15 +197,7 @@ def add_product_handler(call):
         bot.send_message(call.message.chat.id, "You are not authorized to add products.")
         return
 
-    bot.send_message(call.message.chat.id, 
-                     "Please provide the following information for the product:\n"
-                     "1. Product name\n"
-                     "2. Product description\n"
-                     "3. Product price (in USD)\n"
-                     "4. Product category (if category does not exist, it will be created)\n"
-                     "5. Product photo (send the photo after entering details).\n\n"
-                     "Please enter these details in the following format:\n"
-                     "Name, Description, Price, Category")
+    bot.send_message(call.message.chat.id, "Please enter the product details in this format:\nName, Description, Price, Category")
 
     bot.register_next_step_handler(call.message, process_add_product)
 
@@ -216,7 +207,7 @@ def process_add_product(message):
         if len(product_data) != 4:
             bot.send_message(message.chat.id, "Incorrect format. Please provide the details in the format: Name, Description, Price, Category")
             return
-        
+
         name, description, price, category = [data.strip() for data in product_data]
 
         try:
@@ -225,6 +216,28 @@ def process_add_product(message):
             bot.send_message(message.chat.id, "Invalid price. Please provide a valid number for the price.")
             return
         
+        bot.send_message(message.chat.id, "Would you like to add a product photo? If yes, send the image, otherwise type 'skip'.")
+        bot.register_next_step_handler(message, handle_image, name, description, price, category)
+
+    except Exception as e:
+        bot.send_message(message.chat.id, f"Error processing the product data: {e}")
+
+def handle_image(message, name, description, price, category):
+    if message.text.lower() == 'skip':
+        image_url = None
+        add_product_to_db(name, description, price, category, image_url)
+        bot.send_message(message.chat.id, f"Product {name} added successfully without image.")
+    else:
+        if message.content_type == 'photo':
+            photo = message.photo[-1].file_id
+            image_url = bot.get_file(photo).file_path
+            add_product_to_db(name, description, price, category, image_url)
+            bot.send_message(message.chat.id, f"Product {name} with image added successfully!")
+        else:
+            bot.send_message(message.chat.id, "Invalid input. Please send a photo or type 'skip'.")
+
+def add_product_to_db(name, description, price, category, image_url):
+    try:
         conn = sqlite3.connect('shop.db')
         cursor = conn.cursor()
 
@@ -236,18 +249,12 @@ def process_add_product(message):
             category_id = cursor.lastrowid
             conn.commit()
 
-        cursor.execute("""
-            INSERT INTO products (name, description, price, category_id)
-            VALUES (?, ?, ?, ?)
-        """, (name, description, price, category_id))
-
+        cursor.execute("INSERT INTO products (name, description, price, category_id, image_url) VALUES (?, ?, ?, ?, ?)",
+                       (name, description, price, category_id, image_url))
         conn.commit()
         conn.close()
-
-        bot.send_message(message.chat.id, f"Product {name} has been added successfully!")
-    
     except Exception as e:
-        bot.send_message(message.chat.id, f"An error occurred while adding the product: {str(e)}")
+        print(f"Error adding product to DB: {e}")
 
 
 
