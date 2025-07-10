@@ -2,25 +2,26 @@ import sqlite3
 from shop.scripts.database.db import connect_db
 from shop.scripts.loader import bot
 
-def add_product(name, description, price, category):
+def add_product(name, description, price, category, image_url=None):
     conn = sqlite3.connect('shop.db')
     cursor = conn.cursor()
 
     cursor.execute("SELECT id FROM categories WHERE name=?", (category,))
     category_id = cursor.fetchone()
-
-    if category_id:
-        category_id = category_id[0]
-    else:
-        cursor.execute("INSERT INTO categories (name) VALUES (?)", (category,))
+    if not category_id:
+        cursor.execute("INSERT INTO TABLE categories (name) VALUES (?)", (category,))
         category_id = cursor.lastrowid
         conn.commit()
 
-    cursor.execute("INSERT INTO products (name, description, price, category_id) VALUES (?, ?, ?, ?)",
-                   (name, description, price, category_id))
+    cursor.execute("""
+        INSERT INTO products (name, description, price, category, image_url)
+        VALUES (?, ?, ?, ?, ?)
+        """, (name, description, price, category, image_url))
+    
     conn.commit()
     conn.close()
-
+    return f"Product '{name}' has been added successfully!"
+    
 
 def get_products():
     conn = connect_db()
