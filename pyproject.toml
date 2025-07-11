@@ -11,4 +11,4 @@ dependencies = [
 
 [project.scripts]
 start-bot = "shop.scripts.bot:main"
-
+load-photo = "shop.scripts.load_photo:main"
