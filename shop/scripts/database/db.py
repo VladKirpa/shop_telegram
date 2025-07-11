@@ -1,6 +1,19 @@
 import sqlite3
 
 
+def add_image_url_column():
+    conn = sqlite3.connect('shop.db')
+    cursor = conn.cursor()
+    
+    cursor.execute("PRAGMA table_info(products);")
+    columns = [column[1] for column in cursor.fetchall()]  
+    
+    if 'image_url' not in columns:
+        cursor.execute("ALTER TABLE products ADD COLUMN image_url TEXT;")
+        conn.commit()
+    
+    conn.close()
+
 def connect_db():
     return sqlite3.connect('shop.db') 
 
@@ -8,6 +21,7 @@ def connect_db():
 def database_init():
     conn = connect_db()
     cursor = conn.cursor()
+
 
     #users table
     cursor.execute("""CREATE TABLE IF NOT EXISTS  users (
@@ -54,6 +68,7 @@ def database_init():
                    id INTEGER PRIMARY KEY,
                    username TEXT)""")
     
+    add_image_url_column()
     
     conn.commit()
     conn.close()
