@@ -3,8 +3,10 @@ import sqlite3
 from shop.scripts.loader import bot
 from shop.scripts.database import user_base
 from telebot import types
+from shop.scripts.utils import get_or_upload_photo_id
 
 def get_deals_info(user_id):
+    
     conn = sqlite3.connect('shop.db')
     cursor = conn.cursor()
 
@@ -21,7 +23,8 @@ def get_deals_info(user_id):
 
 @bot.message_handler(commands=['Profile 👤'])
 def show_profile(message):
-    
+    profile_photo = get_or_upload_photo_id('shop/media/profile.png')
+
     mcid = message.chat.id
     user_id = message.from_user.id
 
@@ -37,10 +40,15 @@ def show_profile(message):
     button4 = types.InlineKeyboardButton('Change language', callback_data='Change language')
     markup.row(button1), markup.row(button2), markup.row(button3), markup.row(button4)
     
-    bot.send_message(
-        mcid,
-        f"➖➖➖ℹ️➖➖➖\nYour ID : {user_id}\nYour balance : {balance}$\nDeals : {deals_count}\nTotal spent : {deals_amount}$",
-         reply_markup=markup
-        )
+    bot.send_photo(
+    mcid, profile_photo,
+    caption=(
+        f"➖➖➖ℹ️➖➖➖\n"
+        f"Your ID : {user_id}\n"
+        f"Your balance : {balance}$\n"
+        f"Deals : {deals_count}\n"
+        f"Total spent : {deals_amount}$"
+    ),
+    reply_markup=markup)
 
     
