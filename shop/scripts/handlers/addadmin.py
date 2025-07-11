@@ -121,8 +121,8 @@ def admin_panel(message):
         return
     
     markup = types.InlineKeyboardMarkup()
-    button1 = types.InlineKeyboardButton('🎁Product Panel🎁', callback_data='product_panel')
-    button2 = types.InlineKeyboardButton('🏵User Panel🏵', callback_data='user_panel')
+    button1 = types.InlineKeyboardButton('🎁Product Panel🎁', callback_data='panel:product')
+    button2 = types.InlineKeyboardButton('🏵User Panel🏵', callback_data='panel:user')
     markup.add(button1, button2)
     
     bot.send_message(
@@ -131,21 +131,22 @@ def admin_panel(message):
         reply_markup=markup
     )
 
-@bot.callback_query_handler(func=lambda call: call.data in ['product_panel', 'user_panel'])
+@bot.callback_query_handler(func=lambda call: call.data.startswith('panel:'))
 def choose_panel(call):
     user_id = call.from_user.id
+    print(f"Callback received: {call.data}")
     markup = types.InlineKeyboardMarkup()
     
-    if call.data == 'product_panel':  # Панель для работы с продуктами
+    if call.data == 'panel:product':
         button1 = types.InlineKeyboardButton('🛒Add Product🛒', callback_data='add_product')
-        button2 = types.InlineKeyboardButton('🫳Get Product🫳', callback_data='get_product')
+        button2 = types.InlineKeyboardButton('❌Delete Category❌', callback_data='delete_category')
         button3 = types.InlineKeyboardButton('♻️Update Product♻️', callback_data='update_product')
         button4 = types.InlineKeyboardButton('❌Delete Product❌', callback_data='delete_product')
         button5 = types.InlineKeyboardButton('⬅️Back⬅️', callback_data='back_to_panel')
-        markup.add(button1, button2, button3, button4, button5)
+        markup.add(button1, button3, button4, button2, button5)
         bot.send_message(call.message.chat.id, "➖➖➖👑➖➖➖\nPRODUCT PANEL\n➖➖➖👑➖➖➖", reply_markup=markup)
     
-    elif call.data == 'user_panel':  # Панель для работы с пользователями
+    elif call.data == 'panel:user':
         button1 = types.InlineKeyboardButton('✅Add Admin✅', callback_data='add_admin')
         button2 = types.InlineKeyboardButton('❌Remove Admin❌', callback_data='remove_admin')
         button3 = types.InlineKeyboardButton('💰Total Revenue💰', callback_data='total_revenue')
@@ -198,65 +199,41 @@ def add_product_handler(call):
         return
 
     bot.send_message(call.message.chat.id, "Please enter the product details in this format:\nName, Description, Price, Category")
-
     bot.register_next_step_handler(call.message, process_add_product)
+
 
 def process_add_product(message):
     try:
         product_data = message.text.strip().split(',')
         if len(product_data) != 4:
-            bot.send_message(message.chat.id, "Incorrect format. Please provide the details in the format: Name, Description, Price, Category")
+            bot.send_message(message.chat.id, "Invalid format. Use: Name, Description, Price, Category")
             return
 
-        name, description, price, category = [data.strip() for data in product_data]
+        name, description, price, category = [item.strip() for item in product_data]
 
-        try:
-            price = float(price)
-        except ValueError:
-            bot.send_message(message.chat.id, "Invalid price. Please provide a valid number for the price.")
-            return
-        
-        bot.send_message(message.chat.id, "Would you like to add a product photo? If yes, send the image, otherwise type 'skip'.")
+        bot.send_message(message.chat.id, 
+                         "Would you like to add a product photo? If yes, send the image. Otherwise type 'skip'.")
         bot.register_next_step_handler(message, handle_image, name, description, price, category)
 
     except Exception as e:
-        bot.send_message(message.chat.id, f"Error processing the product data: {e}")
+        bot.send_message(message.chat.id, f"Error: {str(e)}")
+    
 
 def handle_image(message, name, description, price, category):
-    if message.text.lower() == 'skip':
-        image_url = None
-        add_product_to_db(name, description, price, category, image_url)
-        bot.send_message(message.chat.id, f"Product {name} added successfully without image.")
+    image_url = None
+
+    if message.content_type == 'photo':
+        file_id = message.photo[-1].file_id
+        image_url = file_id 
+
+    elif message.text.lower() == 'skip':
+        pass
     else:
-        if message.content_type == 'photo':
-            photo = message.photo[-1].file_id
-            image_url = bot.get_file(photo).file_path
-            add_product_to_db(name, description, price, category, image_url)
-            bot.send_message(message.chat.id, f"Product {name} with image added successfully!")
-        else:
-            bot.send_message(message.chat.id, "Invalid input. Please send a photo or type 'skip'.")
+        bot.send_message(message.chat.id, "Invalid input. Send an image or type 'skip'.")
+        return
 
-def add_product_to_db(name, description, price, category, image_url):
-    try:
-        conn = sqlite3.connect('shop.db')
-        cursor = conn.cursor()
-
-        cursor.execute("SELECT id FROM categories WHERE name=?", (category,))
-        category_id = cursor.fetchone()
-
-        if not category_id:
-            cursor.execute("INSERT INTO categories (name) VALUES (?)", (category,))
-            category_id = cursor.lastrowid
-            conn.commit()
-
-        cursor.execute("INSERT INTO products (name, description, price, category_id, image_url) VALUES (?, ?, ?, ?, ?)",
-                       (name, description, price, category_id, image_url))
-        conn.commit()
-        conn.close()
-    except Exception as e:
-        print(f"Error adding product to DB: {e}")
-
-
+    result = catalog_base.add_product(name, description, price, category, image_url)
+    bot.send_message(message.chat.id, result)
 
 # delete product
 @bot.callback_query_handler(func=lambda call: call.data == 'delete_product')
@@ -264,32 +241,75 @@ def delete_product_handler(call):
     if not is_admin(call.from_user.id):
         bot.send_message(call.message.chat.id, "You are not authorized to delete products.")
         return
-    
-    
-    conn = sqlite3.connect('shop.db')
-    cursor = conn.cursor()
-    cursor.execute("SELECT id, name FROM products")
-    products = cursor.fetchall()
-    conn.close()
-    
-    markup = types.InlineKeyboardMarkup()
-    for product in products:
-        button = types.InlineKeyboardButton(product[1], callback_data=f'delete_product_{product[0]}')
-        markup.add(button)
-    
-    bot.send_message(call.message.chat.id, "Select a product to delete:", reply_markup=markup)
+
+    try:
+        conn = sqlite3.connect('shop.db')
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, name FROM products")
+        products = cursor.fetchall()
+        conn.close()
+
+        if not products:
+            bot.send_message(call.message.chat.id, "No products found.")
+            return
+
+        markup = types.InlineKeyboardMarkup()
+        for product_id, product_name in products:
+            markup.add(types.InlineKeyboardButton(
+                text=product_name,
+                callback_data=f'delete_product_{product_id}')
+            )
+
+        bot.send_message(call.message.chat.id, "Select a product to delete:", reply_markup=markup)
+
+    except Exception as e:
+        bot.send_message(call.message.chat.id, f"Error: {str(e)}")
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('delete_product_'))
 def confirm_delete_product(call):
-    product_id = call.data.split('_')[2]
-    
-    conn = sqlite3.connect('shop.db')
-    cursor = conn.cursor()
-    cursor.execute("DELETE FROM products WHERE id=?", (product_id,))
-    conn.commit()
-    conn.close()
+    try:
+        product_id = int(call.data.split('_')[2])
+        result = catalog_base.delete_product(product_id)
+        bot.send_message(call.message.chat.id, result)
+    except Exception as e:
+        bot.send_message(call.message.chat.id, f"Error deleting product: {str(e)}")
 
-    bot.send_message(call.message.chat.id, f"Product with ID {product_id} has been deleted.")
+#Delete Category
+@bot.callback_query_handler(func=lambda call: call.data == 'delete_category')
+def delete_category(call):
+    if not is_admin(call.from_user.id):
+        bot.send_message(call.message.chat.id, "You are haven't got permission for that")
+        return
+
+    try:
+        conn = sqlite3.connect('shop.db')
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, name FROM categories")
+        categories = cursor.fetchall()
+        conn.close()
+
+        if not categories:
+            bot.send_message(call.message.chat.id, 'No categories')
+            return
+
+        markup = types.InlineKeyboardMarkup()
+        for category_id, category_name in categories:
+            markup.add(types.InlineKeyboardButton(text=category_name, callback_data=f'delete_category_{category_id}'))
+    
+        bot.send_message(call.message.chat.id, 'Select category to delete', reply_markup=markup)
+    except Exception as e:
+        bot.send_message(call.message.chat.id, f'Error: {str(e)}')
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('delete_category_'))
+def confirm_delete_category(call):
+    try:
+        category_id = int(call.data.split('_')[2])
+        result = catalog_base.delete_category(category_id)
+        bot.send_message(call.message.chat.id, result)
+    except Exception as e:
+        bot.send_message(call.message.chat.id, f'Error: {str(e)}')
+
+
 
 # update product
 @bot.callback_query_handler(func=lambda call: call.data == 'update_product')
@@ -297,57 +317,47 @@ def update_product_handler(call):
     if not is_admin(call.from_user.id):
         bot.send_message(call.message.chat.id, "You are not authorized to update products.")
         return
-    
 
-    conn = sqlite3.connect('shop.db')
-    cursor = conn.cursor()
-    cursor.execute("SELECT id, name FROM products")
-    products = cursor.fetchall()
-    conn.close()
-    
-    markup = types.InlineKeyboardMarkup()
-    for product in products:
-        button = types.InlineKeyboardButton(product[1], callback_data=f'update_product_{product[0]}')
-        markup.add(button)
-    
-    bot.send_message(call.message.chat.id, "Select a product to update:", reply_markup=markup)
+    try:
+        conn = sqlite3.connect('shop.db')
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, name FROM products")
+        products = cursor.fetchall()
+        conn.close()
+
+        if not products:
+            bot.send_message(call.message.chat.id, "No products available.")
+            return
+
+        markup = types.InlineKeyboardMarkup()
+        for product_id, product_name in products:
+            markup.add(types.InlineKeyboardButton(product_name, callback_data=f'update_product_{product_id}'))
+
+        bot.send_message(call.message.chat.id, "Select a product to update:", reply_markup=markup)
+
+    except Exception as e:
+        bot.send_message(call.message.chat.id, f"Error: {str(e)}")
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('update_product_'))
 def process_update_product(call):
-    product_id = call.data.split('_')[2]
-
-    bot.send_message(call.message.chat.id, "Please enter the new product details (name, description, price, category), separated by commas.")
+    product_id = int(call.data.split('_')[2])
+    bot.send_message(
+        call.message.chat.id,
+        "Please enter the new product details (Name, Description, Price, Category), separated by commas:"
+    )
     bot.register_next_step_handler(call.message, update_product_details, product_id)
 
 def update_product_details(message, product_id):
     try:
-        
-        product_data = message.text.strip().split(',')
-        if len(product_data) != 4:
-            bot.send_message(message.chat.id, "Incorrect format. Please provide the details in the format: Name, Description, Price, Category")
+        data = message.text.strip().split(',')
+        if len(data) != 4:
+            bot.send_message(message.chat.id, "Incorrect format. Use: Name, Description, Price, Category")
             return
-        
-        name, description, price, category = [data.strip() for data in product_data]
-        
-        
-        conn = sqlite3.connect('shop.db')
-        cursor = conn.cursor()
-        cursor.execute("SELECT id FROM categories WHERE name=?", (category,))
-        category_id = cursor.fetchone()
-        
-        if not category_id:
-            cursor.execute("INSERT INTO categories (name) VALUES (?)", (category,))
-            category_id = cursor.lastrowid
-            conn.commit()
-        
 
-        cursor.execute("UPDATE products SET name=?, description=?, price=?, category_id=? WHERE id=?", 
-                       (name, description, price, category_id, product_id))
-        conn.commit()
-        conn.close()
+        name, description, price, category = [item.strip() for item in data]
 
-        bot.send_message(message.chat.id, f"Product with ID {product_id} has been updated.")
-    
+        result = catalog_base.update_product(product_id, name, description, price, category)
+        bot.send_message(message.chat.id, result)
+
     except Exception as e:
-        bot.send_message(message.chat.id, f"An error occurred while updating the product: {str(e)}")
-
+        bot.send_message(message.chat.id, f"❌ Error updating product: {str(e)}")
