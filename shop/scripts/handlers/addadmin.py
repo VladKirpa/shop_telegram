@@ -3,6 +3,7 @@ import sqlite3
 from shop.scripts.loader import bot, admin
 from shop.scripts.database import catalog_base
 from telebot import types
+import json
 
 
 def add_admin(user_id, username):
@@ -27,61 +28,6 @@ def is_admin(user_id):
     conn.close()
     return admin is not None
 
-
-
-@bot.message_handler(commands=['addadmin'])
-def add_admin_handler(message):
-    if is_admin(message.from_user.id):
-        bot.send_message(
-            message.chat.id, 
-            'Enter the user\'s ID and username separated by a space.\n'
-            'For example: 123456789 JohnDoe\n'
-            'Where 123456789 is the user ID and JohnDoe is the username.'
-        )
-        bot.register_next_step_handler(message, process_add_admin)
-    else:
-        bot.send_message(message.chat.id, "You are not authorized to add admins.")
-        
-def process_add_admin(message):
-    try:
-        user_input = message.text.strip()
-        user_id, username = user_input.split()
-        
-        user_id = int(user_id)
-        add_admin(user_id, username)
-        bot.send_message(message.chat.id, f'User {username} ({user_id}) has been added as an admin.')
-    
-    except ValueError:
-        bot.send_message(message.chat.id, 'Incorrect format. Please enter both user ID and username in the format: "user_id username".')
-
-
-@bot.message_handler(commands=['removeadmin'])
-def remove_admin_handler(message):
-    if is_admin(message.from_user.id):
-        bot.send_message(
-            message.chat.id, 
-            'Enter the user\'s ID and username separated by a space to remove the admin.\n'
-            'For example: 123456789 JohnDoe\n'
-            'Where 123456789 is the user ID and JohnDoe is the username.'
-        )
-        bot.register_next_step_handler(message, process_remove_admin)
-    else:
-        bot.send_message(message.chat.id, "You are not authorized to remove admins.")
-        
-def process_remove_admin(message):
-    try:
-        user_input = message.text.strip()
-        user_id, username = user_input.split()
-        
-        user_id = int(user_id)
-        remove_admin(user_id)
-        bot.send_message(message.chat.id, f'User {username} ({user_id}) has been removed from admin panel.')
-    
-    except ValueError:
-        bot.send_message(message.chat.id, 'Incorrect format. Please enter both user ID and username in the format: "user_id username".')
-
-        
-
 def get_total_revenue(user_id):
     try:
         if is_admin(user_id):
@@ -101,263 +47,210 @@ def get_total_revenue(user_id):
             pass
     return total_revenue
 
+admin_photo_buffer = {}
 
-@bot.message_handler(commands=['totalrevenue'])
-def totalrevenue(message):
-    try:
-        user_id = message.from_user.id
-        revenue = get_total_revenue(user_id)
-        bot.send_message(message.chat.id, f'Total cash: {revenue}')
-    except Exception as e:
-        bot.send_message(message.chat.id, f"An error occurred while fetching the total revenue: {str(e)}")
+@bot.callback_query_handler(func=lambda call: True)
+def unified_callback_handler(call):
+    data = call.data
 
-
-
-@bot.message_handler(commands=['panel'])
-def admin_panel(message):
-    user_id = message.from_user.id
-    
-    if not is_admin(user_id):
-        return
-    
-    markup = types.InlineKeyboardMarkup()
-    button1 = types.InlineKeyboardButton('🎁Product Panel🎁', callback_data='panel:product')
-    button2 = types.InlineKeyboardButton('🏵User Panel🏵', callback_data='panel:user')
-    markup.add(button1, button2)
-    
-    bot.send_message(
-        message.chat.id,
-        '➖➖➖👑➖➖➖\nWelcome to admin panel.\nSelect what you want to continue working with.\n➖➖➖👑➖➖➖',
-        reply_markup=markup
-    )
-
-@bot.callback_query_handler(func=lambda call: call.data.startswith('panel:'))
-def choose_panel(call):
-    user_id = call.from_user.id
-    print(f"Callback received: {call.data}")
-    markup = types.InlineKeyboardMarkup()
-    
-    if call.data == 'panel:product':
-        button1 = types.InlineKeyboardButton('🛒Add Product🛒', callback_data='add_product')
-        button2 = types.InlineKeyboardButton('❌Delete Category❌', callback_data='delete_category')
-        button3 = types.InlineKeyboardButton('♻️Update Product♻️', callback_data='update_product')
-        button4 = types.InlineKeyboardButton('❌Delete Product❌', callback_data='delete_product')
-        button5 = types.InlineKeyboardButton('⬅️Back⬅️', callback_data='back_to_panel')
-        markup.add(button1, button3, button4, button2, button5)
+    if data == 'panel:product':
+        if not is_admin(call.from_user.id): return
+        markup = types.InlineKeyboardMarkup()
+        markup.add(
+            types.InlineKeyboardButton('🛒Add Product🛒', callback_data='add_product'),
+            types.InlineKeyboardButton('♻️Update Product♻️', callback_data='update_product'),
+            types.InlineKeyboardButton('❌Delete Product❌', callback_data='delete_product'),
+            types.InlineKeyboardButton('❌Delete Category❌', callback_data='delete_category'),
+            types.InlineKeyboardButton('⬅️Back⬅️', callback_data='back_to_panel')
+        )
         bot.send_message(call.message.chat.id, "➖➖➖👑➖➖➖\nPRODUCT PANEL\n➖➖➖👑➖➖➖", reply_markup=markup)
-    
-    elif call.data == 'panel:user':
-        button1 = types.InlineKeyboardButton('✅Add Admin✅', callback_data='add_admin')
-        button2 = types.InlineKeyboardButton('❌Remove Admin❌', callback_data='remove_admin')
-        button3 = types.InlineKeyboardButton('💰Total Revenue💰', callback_data='total_revenue')
-        button4 = types.InlineKeyboardButton('⬅️Back⬅️', callback_data='back_to_panel')
-        markup.add(button1, button2, button3, button4)
+
+    elif data == 'panel:user':
+        if not is_admin(call.from_user.id): return
+        markup = types.InlineKeyboardMarkup()
+        markup.add(
+            types.InlineKeyboardButton('✅Add Admin✅', callback_data='add_admin'),
+            types.InlineKeyboardButton('❌Remove Admin❌', callback_data='remove_admin'),
+            types.InlineKeyboardButton('💰Total Revenue💰', callback_data='total_revenue'),
+            types.InlineKeyboardButton('⬅️Back⬅️', callback_data='back_to_panel')
+        )
         bot.send_message(call.message.chat.id, "➖➖➖👑➖➖➖\nUSER PANEL\n➖➖➖👑➖➖➖", reply_markup=markup)
 
-# user panel
-@bot.callback_query_handler(func=lambda call: call.data == 'add_admin')
-def add_admin_handler(call):
-    if not is_admin(call.from_user.id):
-        bot.send_message(call.message.chat.id, "You are not authorized to add admins.")
-        return
+    elif data == 'add_admin':
+        if not is_admin(call.from_user.id): return
+        bot.send_message(call.message.chat.id, 'Enter the user ID and username separated by a space.')
+        bot.register_next_step_handler(call.message, process_add_admin)
 
-    bot.send_message(call.message.chat.id, 'Enter the user ID and username separated by a space.')
-    bot.register_next_step_handler(call.message, process_add_admin)
+    elif data == 'remove_admin':
+        if not is_admin(call.from_user.id): return
+        bot.send_message(call.message.chat.id, 'Enter the user ID and username separated by a space.')
+        bot.register_next_step_handler(call.message, process_remove_admin)
 
+    elif data == 'total_revenue':
+        if not is_admin(call.from_user.id): return
+        total = get_total_revenue(call.from_user.id)
+        bot.send_message(call.message.chat.id, f'Total revenue: {total} USD')
 
-@bot.callback_query_handler(func=lambda call: call.data == 'remove_admin')
-def remove_admin_handler(call):
-    if not is_admin(call.from_user.id):
-        bot.send_message(call.message.chat.id, "You are not authorized to remove admins.")
-        return
-    
-    bot.send_message(call.message.chat.id, 'Enter the user ID and username separated by a space.')
-    bot.register_next_step_handler(call.message, process_remove_admin)
+    elif data == 'add_product':
+        if not is_admin(call.from_user.id): return
+        bot.send_message(call.message.chat.id, "Enter product as: Name, Description, Price, Category")
+        bot.register_next_step_handler(call.message, process_add_product)
 
-
-@bot.callback_query_handler(func=lambda call: call.data == 'total_revenue')
-def total_revenue_handler(call):
-    if not is_admin(call.from_user.id):
-        bot.send_message(call.message.chat.id, "You are not authorized to view total revenue.")
-        return
-    
-    total_revenue = get_total_revenue(call.from_user.id)
-    bot.send_message(call.message.chat.id, f'Total revenue: {total_revenue} USD')
-
-
-@bot.callback_query_handler(func=lambda call: call.data == 'back_to_panel')
-def back_to_panel_handler(call):
-    admin_panel(call.message)
-
-
-# product panel
-# add product
-@bot.callback_query_handler(func=lambda call: call.data == 'add_product')
-def add_product_handler(call):
-    if not is_admin(call.from_user.id):
-        bot.send_message(call.message.chat.id, "You are not authorized to add products.")
-        return
-
-    bot.send_message(call.message.chat.id, "Please enter the product details in this format:\nName, Description, Price, Category")
-    bot.register_next_step_handler(call.message, process_add_product)
-
-
-def process_add_product(message):
-    try:
-        product_data = message.text.strip().split(',')
-        if len(product_data) != 4:
-            bot.send_message(message.chat.id, "Invalid format. Use: Name, Description, Price, Category")
-            return
-
-        name, description, price, category = [item.strip() for item in product_data]
-
-        bot.send_message(message.chat.id, 
-                         "Would you like to add a product photo? If yes, send the image. Otherwise type 'skip'.")
-        bot.register_next_step_handler(message, handle_image, name, description, price, category)
-
-    except Exception as e:
-        bot.send_message(message.chat.id, f"Error: {str(e)}")
-    
-
-def handle_image(message, name, description, price, category):
-    image_url = None
-
-    if message.content_type == 'photo':
-        file_id = message.photo[-1].file_id
-        image_url = file_id 
-
-    elif message.text.lower() == 'skip':
-        pass
-    else:
-        bot.send_message(message.chat.id, "Invalid input. Send an image or type 'skip'.")
-        return
-
-    result = catalog_base.add_product(name, description, price, category, image_url)
-    bot.send_message(message.chat.id, result)
-
-# delete product
-@bot.callback_query_handler(func=lambda call: call.data == 'delete_product')
-def delete_product_handler(call):
-    if not is_admin(call.from_user.id):
-        bot.send_message(call.message.chat.id, "You are not authorized to delete products.")
-        return
-
-    try:
+    elif data == 'delete_product':
+        if not is_admin(call.from_user.id): return
         conn = sqlite3.connect('shop.db')
         cursor = conn.cursor()
         cursor.execute("SELECT id, name FROM products")
         products = cursor.fetchall()
         conn.close()
-
-        if not products:
-            bot.send_message(call.message.chat.id, "No products found.")
-            return
-
         markup = types.InlineKeyboardMarkup()
-        for product_id, product_name in products:
-            markup.add(types.InlineKeyboardButton(
-                text=product_name,
-                callback_data=f'delete_product_{product_id}')
-            )
-
+        for pid, name in products:
+            markup.add(types.InlineKeyboardButton(name, callback_data=f'delete_product_{pid}'))
         bot.send_message(call.message.chat.id, "Select a product to delete:", reply_markup=markup)
 
-    except Exception as e:
-        bot.send_message(call.message.chat.id, f"Error: {str(e)}")
-
-@bot.callback_query_handler(func=lambda call: call.data.startswith('delete_product_'))
-def confirm_delete_product(call):
-    try:
-        product_id = int(call.data.split('_')[2])
-        result = catalog_base.delete_product(product_id)
+    elif data.startswith('delete_product_'):
+        pid = int(data.split('_')[2])
+        result = catalog_base.delete_product(pid)
         bot.send_message(call.message.chat.id, result)
-    except Exception as e:
-        bot.send_message(call.message.chat.id, f"Error deleting product: {str(e)}")
 
-#Delete Category
-@bot.callback_query_handler(func=lambda call: call.data == 'delete_category')
-def delete_category(call):
-    if not is_admin(call.from_user.id):
-        bot.send_message(call.message.chat.id, "You are haven't got permission for that")
-        return
-
-    try:
+    elif data == 'delete_category':
+        if not is_admin(call.from_user.id): return
         conn = sqlite3.connect('shop.db')
         cursor = conn.cursor()
         cursor.execute("SELECT id, name FROM categories")
         categories = cursor.fetchall()
         conn.close()
-
-        if not categories:
-            bot.send_message(call.message.chat.id, 'No categories')
-            return
-
         markup = types.InlineKeyboardMarkup()
-        for category_id, category_name in categories:
-            markup.add(types.InlineKeyboardButton(text=category_name, callback_data=f'delete_category_{category_id}'))
-    
+        for cid, cname in categories:
+            markup.add(types.InlineKeyboardButton(cname, callback_data=f'delete_category_{cid}'))
         bot.send_message(call.message.chat.id, 'Select category to delete', reply_markup=markup)
-    except Exception as e:
-        bot.send_message(call.message.chat.id, f'Error: {str(e)}')
 
-@bot.callback_query_handler(func=lambda call: call.data.startswith('delete_category_'))
-def confirm_delete_category(call):
-    try:
-        category_id = int(call.data.split('_')[2])
-        result = catalog_base.delete_category(category_id)
+    elif data.startswith('delete_category_'):
+        cid = int(data.split('_')[2])
+        result = catalog_base.delete_category(cid)
         bot.send_message(call.message.chat.id, result)
-    except Exception as e:
-        bot.send_message(call.message.chat.id, f'Error: {str(e)}')
 
-
-
-# update product
-@bot.callback_query_handler(func=lambda call: call.data == 'update_product')
-def update_product_handler(call):
-    if not is_admin(call.from_user.id):
-        bot.send_message(call.message.chat.id, "You are not authorized to update products.")
-        return
-
-    try:
+    elif data == 'update_product':
+        if not is_admin(call.from_user.id): return
         conn = sqlite3.connect('shop.db')
         cursor = conn.cursor()
         cursor.execute("SELECT id, name FROM products")
         products = cursor.fetchall()
         conn.close()
-
-        if not products:
-            bot.send_message(call.message.chat.id, "No products available.")
-            return
-
         markup = types.InlineKeyboardMarkup()
-        for product_id, product_name in products:
-            markup.add(types.InlineKeyboardButton(product_name, callback_data=f'update_product_{product_id}'))
+        for pid, name in products:
+            markup.add(types.InlineKeyboardButton(name, callback_data=f'update_product_{pid}'))
+        bot.send_message(call.message.chat.id, "Select product to update:", reply_markup=markup)
 
-        bot.send_message(call.message.chat.id, "Select a product to update:", reply_markup=markup)
+    elif data.startswith('update_product_'):
+        pid = int(data.split('_')[2])
+        bot.send_message(call.message.chat.id, "Enter new product details (Name, Description, Price, Category)")
+        bot.register_next_step_handler(call.message, update_product_details, pid)
 
-    except Exception as e:
-        bot.send_message(call.message.chat.id, f"Error: {str(e)}")
+    elif data == 'back_to_panel':
+        send_admin_panel(call.message.chat.id)
 
-@bot.callback_query_handler(func=lambda call: call.data.startswith('update_product_'))
-def process_update_product(call):
-    product_id = int(call.data.split('_')[2])
+
+def send_admin_panel(chat_id):
+    markup = types.InlineKeyboardMarkup()
+    button1 = types.InlineKeyboardButton('🎁Product Panel🎁', callback_data='panel:product')
+    button2 = types.InlineKeyboardButton('🏵User Panel🏵', callback_data='panel:user')
+    markup.add(button1, button2)
+
     bot.send_message(
-        call.message.chat.id,
-        "Please enter the new product details (Name, Description, Price, Category), separated by commas:"
+        chat_id,
+        '➖➖➖👑➖➖➖\nWelcome to admin panel.\nSelect what you want to continue working with.\n➖➖➖👑➖➖➖',
+        reply_markup=markup
     )
-    bot.register_next_step_handler(call.message, update_product_details, product_id)
+
+@bot.message_handler(commands=['panel'])
+def handle_panel_command(message):
+    if is_admin(message.from_user.id):
+        send_admin_panel(message.chat.id)
+
+
+@bot.callback_query_handler(func=lambda call: call.data == 'back_to_panel')
+def back_to_panel_handler(call):
+    if is_admin(call.from_user.id):
+        send_admin_panel(call.message.chat.id)
+
+def process_add_admin(message):
+    try:
+        user_id, username = message.text.strip().split()
+        add_admin(int(user_id), username)
+        bot.send_message(message.chat.id, f'Admin {username} ({user_id}) added.')
+    except:
+        bot.send_message(message.chat.id, 'Invalid format. Use: user_id username')
+
+
+def process_remove_admin(message):
+    try:
+        user_id, username = message.text.strip().split()
+        remove_admin(int(user_id))
+        bot.send_message(message.chat.id, f'Admin {username} ({user_id}) removed.')
+    except:
+        bot.send_message(message.chat.id, 'Invalid format. Use: user_id username')
+
+
+def process_add_product(message):
+    try:
+        name, desc, price, cat = [x.strip() for x in message.text.strip().split(',')]
+        admin_photo_buffer[message.from_user.id] = {'name': name, 'description': desc, 'price': price, 'category': cat, 'photos': []}
+        bot.send_message(message.chat.id, "Send photos. Type `done` when finished or `skip` to skip.", parse_mode='Markdown')
+        bot.register_next_step_handler(message, handle_product_photos)
+    except:
+        bot.send_message(message.chat.id, "Invalid format. Use: Name, Description, Price, Category")
+
+
+def handle_product_photos(message):
+    uid = message.from_user.id
+    if uid not in admin_photo_buffer:
+        bot.send_message(message.chat.id, "Something went wrong. Start again.")
+        return
+
+    if message.content_type == 'photo':
+        fid = message.photo[-1].file_id
+        admin_photo_buffer[uid]['photos'].append(fid)
+        bot.send_message(message.chat.id, "✅ Photo saved. More? Or type `done`.", parse_mode='Markdown')
+        bot.register_next_step_handler(message, handle_product_photos)
+    elif message.text.lower() == 'done':
+        data = admin_photo_buffer.pop(uid)
+        image_data = json.dumps(data['photos']) if len(data['photos']) > 1 else (data['photos'][0] if data['photos'] else None)
+        result = catalog_base.add_product(data['name'], data['description'], data['price'], data['category'], image_data)
+        bot.send_message(message.chat.id, result)
+    elif message.text.lower() == 'skip':
+        data = admin_photo_buffer.pop(uid)
+        result = catalog_base.add_product(data['name'], data['description'], data['price'], data['category'], None)
+        bot.send_message(message.chat.id, result)
+    else:
+        bot.send_message(message.chat.id, "❌ Invalid. Send photo, or type `done` / `skip`.")
+        bot.register_next_step_handler(message, handle_product_photos)
+
 
 def update_product_details(message, product_id):
     try:
-        data = message.text.strip().split(',')
-        if len(data) != 4:
-            bot.send_message(message.chat.id, "Incorrect format. Use: Name, Description, Price, Category")
-            return
-
-        name, description, price, category = [item.strip() for item in data]
-
-        result = catalog_base.update_product(product_id, name, description, price, category)
+        name, desc, price, cat = [x.strip() for x in message.text.strip().split(',')]
+        result = catalog_base.update_product(product_id, name, desc, price, cat)
         bot.send_message(message.chat.id, result)
+    except:
+        bot.send_message(message.chat.id, "❌ Error updating product.")
 
+def make_photo_id(chat_id, file_path, caption=None, reply_markup=None, parse_mode='Markdown'):
+
+    try:
+        with open(file_path, 'rb') as photo:
+            sent = bot.send_photo(
+                chat_id=chat_id,
+                photo=photo,
+                caption=caption,
+                reply_markup=reply_markup,
+                parse_mode=parse_mode
+            )
+            file_id = sent.photo[-1].file_id
+            print(f"✅ [Photo Sent] file_id: {file_id}")
+            return file_id
+    except FileNotFoundError:
+        bot.send_message(chat_id, f"❌ File not found: `{file_path}`", parse_mode='Markdown')
     except Exception as e:
-        bot.send_message(message.chat.id, f"❌ Error updating product: {str(e)}")
+        bot.send_message(chat_id, f"❌ Error: {e}")
+
