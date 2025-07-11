@@ -53,12 +53,10 @@ def show_product_details(call):
         markup = types.InlineKeyboardMarkup()
         button1 = types.InlineKeyboardButton("Buy", callback_data=f'buy_{product_id}')
         button2 = types.InlineKeyboardButton("Back to Category", callback_data='back_to_category')
-
         markup.add(button1, button2)
 
         bot.send_message(call.message.chat.id, 
                         f"*{name}*\n"
                         f"Price: *${price}*\n\n"
-                        f"{description}\n\n"
-                        f"[View Image]({image_url})", 
-                        parse_mode='Markdown')
+                        f"{description}\n\n", 
+                        parse_mode='Markdown', reply_markup=markup)
