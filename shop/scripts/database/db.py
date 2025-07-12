@@ -68,6 +68,15 @@ def database_init():
                    id INTEGER PRIMARY KEY,
                    username TEXT)""")
     
+    #payments table
+    cursor.execute("""CREATE TABLE IF NOT EXISTS payments (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER,
+                    amount REAL,
+                    method TEXT,
+                    status TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)""")
+    
     add_image_url_column()
     
     conn.commit()

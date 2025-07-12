@@ -1,10 +1,10 @@
 import os
 import json
 from telebot import types
-from shop.scripts.loader import bot
+from shop.scripts.loader import bot, admin
 
 PHOTO_ID_DB = 'photo_ids.json'
-ADMIN_ID = 6659521053
+ADMIN_ID = admin
 
 def get_or_upload_photo_id(photo_path: str) -> str:
     filename = os.path.basename(photo_path)

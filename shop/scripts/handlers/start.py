@@ -1,17 +1,17 @@
 import telebot 
-from shop.scripts.loader import bot, admin
+from shop.scripts.loader import bot, admin, cb_token
 from telebot import types
 from shop.scripts.handlers import profile, catalog
 from shop.scripts.handlers.addadmin import add_admin, is_admin
 from shop.scripts.database import db
 from shop.scripts.database import user_base
-from shop.scripts.utils import get_or_upload_photo_id
+from shop.scripts.photo_loader import get_or_upload_photo_id
 
-admin_id = 6659521053
+admin_id = admin
 
 @bot.message_handler(commands=['start'])
 def start(message):
-    
+
     start_photo = get_or_upload_photo_id('shop/media/start.png')
     
     user_id = message.from_user.id
