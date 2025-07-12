@@ -1,0 +1,10 @@
+{
+    "enabled_methods": [
+        "crypto"
+    ],
+    "card_details": {
+        "number": "0000 0000 0000 0000",
+        "bank": "Your Bank",
+        "receiver": "Name Surname"
+    }
+}

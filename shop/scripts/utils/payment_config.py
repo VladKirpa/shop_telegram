@@ -1,11 +1,10 @@
 import json
 import os
-import sqlite3
 
 CONFIG_PATH = "payment_config.json"
 
 DEFAULT_CONFIG = {
-    "enabled_methods": ["crypto"],
+    "enabled_methods": ["crypto"],  # "crypto", "card", или оба
     "card_details": {
         "number": "0000 0000 0000 0000",
         "bank": "Your Bank",
@@ -52,8 +51,7 @@ def update_card_details(number: str, bank: str, receiver: str):
     save_config(config)
 
 def get_payment_config():
-    config = load_config()
-    methods = config.get("enabled_methods", [])
+    methods = load_config().get("enabled_methods", [])
     if "crypto" in methods and "card" in methods:
         return "both"
     elif "crypto" in methods:
@@ -62,4 +60,3 @@ def get_payment_config():
         return "card"
     else:
         return "none"
-    
