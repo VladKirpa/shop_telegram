@@ -3,8 +3,9 @@ import sqlite3
 from shop.scripts.loader import bot
 from shop.scripts.database import user_base
 from telebot import types
-from shop.scripts.utils import get_or_upload_photo_id
-from shop.scripts.util.crypto import check_crypto_payment
+from shop.scripts.utils.photo_loader import get_or_upload_photo_id
+from shop.scripts.utils.crypto import check_crypto_payment, create_invoice
+from shop.scripts.utils.payment_config import is_method_enabled, get_card_details, get_payment_config
 
 
 def get_deals_info(user_id):
@@ -53,18 +54,55 @@ def show_profile(message):
     ),
     reply_markup=markup)
 
-from shop.scripts.util.crypto import create_invoice
 
 @bot.callback_query_handler(func=lambda call: call.data == '💸Top up Balance💸')
 def top_up_balance(call):
-    markup = types.InlineKeyboardMarkup()
-    markup.add(types.InlineKeyboardButton("💰 Top up via CryptoBot", callback_data='crypto_topup'))
-    bot.send_message(call.message.chat.id, "💳 Choose top-up method:", reply_markup=markup)
+    method = get_payment_config()
+    
+    if method == "crypto":
+        msg = bot.send_message(call.message.chat.id, "💵 Enter amount in USD to top up:")
+        bot.register_next_step_handler(msg, handle_amount_input)
+    elif method == "card":
+        card = get_card_details()
+        if not card:
+            bot.send_message(call.message.chat.id, "❌ Card payment temporarily unavailable.")
+            return
 
-@bot.callback_query_handler(func=lambda call: call.data == 'crypto_topup')
-def ask_amount(call):
-    msg = bot.send_message(call.message.chat.id, "💵 Enter amount in USD to top up:")
-    bot.register_next_step_handler(msg, handle_amount_input)
+        text = (
+            f"💳 Send payment to:\n"
+            f"Card: `{card['number']}`\n"
+            f"Bank: `{card['bank']}`\n"
+            f"Recipient: `{card['holder']}`\n\n"
+            f"📸 Send screenshot as confirmation:"
+        )
+        msg = bot.send_message(call.message.chat.id, text, parse_mode="Markdown")
+        bot.register_next_step_handler(msg, handle_card_screenshot)
+    elif method == "none":
+        bot.send_message(call.message.chat.id, "💬 This store doesn't support online payment.\nContact seller for instructions.")
+    elif method == "both":
+        markup = types.InlineKeyboardMarkup()
+        markup.add(
+            types.InlineKeyboardButton("Crypto", callback_data='crypto_topup'),
+            types.InlineKeyboardButton("Card", callback_data='card_topup')
+        )
+        bot.send_message(call.message.chat.id, "💵 Choose payment method:", reply_markup=markup)
+
+@bot.callback_query_handler(func=lambda call: call.data == 'card_topup')
+def card_topup(call):
+    card = get_card_details()
+    if not card:
+        bot.send_message(call.message.chat.id, "❌ Card payment temporarily unavailable.")
+        return
+
+    text = (
+        f"💳 Send payment to:\n"
+        f"Card: `{card['number']}`\n"
+        f"Bank: `{card['bank']}`\n"
+        f"Recipient: `{card['holder']}`\n\n"
+        f"📸 Send screenshot as confirmation:"
+    )
+    msg = bot.send_message(call.message.chat.id, text, parse_mode="Markdown")
+    bot.register_next_step_handler(msg, handle_card_screenshot)
 
 def handle_amount_input(message):
     try:
@@ -95,4 +133,37 @@ def handle_check_payment(call):
         bot.send_message(user_id, "❌ Платёж не найден. Подождите пару минут и попробуйте снова.")
 
 
+@bot.callback_query_handler(func=lambda call: call.data == 'card_topup')
+def show_card_details(call):
+    card = get_card_details()
+    message_text = (
+        f"💳 Реквизиты для перевода:\n"
+        f"Номер карты: {card['number']}\n"
+        f"Банк: {card['bank']}\n"
+        f"Получатель: {card['receiver']}\n\n"
+        "После перевода отправьте скриншот оплаты в этот чат."
+    )
+    bot.send_message(call.message.chat.id, message_text)
 
+@bot.message_handler(content_types=["photo"])
+def handle_card_payment_photo(message):
+    if is_method_enabled("card"):
+        from os import getenv
+        admin_id = int(getenv("ADMIN_ID"))
+        bot.forward_message(admin_id, message.chat.id, message.message_id)
+        bot.reply_to(message, "📨 Скрин отправлен на проверку администратору.")
+
+def handle_card_screenshot(message):
+    if not message.photo:
+        bot.send_message(message.chat.id, "❌ Please send a valid screenshot (photo).")
+        return
+
+    photo_id = message.photo[-1].file_id
+
+    conn = sqlite3.connect("shop.db")
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO card_payments (user_id, file_id, status) VALUES (?, ?, ?)", (message.from_user.id, photo_id, 'pending'))
+    conn.commit()
+    conn.close()
+
+    bot.send_message(message.chat.id, "✅ Screenshot received. We'll verify and update your balance soon.")

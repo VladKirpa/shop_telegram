@@ -77,6 +77,30 @@ def database_init():
                     status TEXT,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)""")
     
+
+    #payment_config table
+    cursor.execute("""CREATE TABLE IF NOT EXISTS payment_config (
+                    id INTEGER PRIMARY KEY,
+                    method TEXT NOT NULL DEFAULT 'crypto', -- 'crypto', 'card', 'both', 'none'
+                    card_number TEXT,
+                    card_bank TEXT,
+                    card_holder TEXT)""")
+    
+    #screenshots
+    cursor.execute("""CREATE TABLE IF NOT EXISTS card_payments (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER,
+                    file_id TEXT,
+                    status TEXT DEFAULT 'pending')""")
+
+    #invoice table 
+    cursor.execute("""CREATE TABLE IF NOT EXISTS invoices (
+                    invoice_id TEXT PRIMARY KEY,
+                    user_id INTEGER NOT NULL,
+                    amount REAL NOT NULL,
+                    status TEXT DEFAULT 'pending',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)""")
+    
     add_image_url_column()
     
     conn.commit()

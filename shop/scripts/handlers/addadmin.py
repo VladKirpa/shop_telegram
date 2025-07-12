@@ -4,7 +4,7 @@ from shop.scripts.loader import bot, admin
 from shop.scripts.database import catalog_base
 from telebot import types
 import json
-
+from shop.scripts.utils.photo_loader import get_or_upload_photo_id
 
 def add_admin(user_id, username):
     conn = sqlite3.connect('shop.db')
@@ -76,15 +76,59 @@ def unified_callback_handler(call):
         )
         bot.send_message(call.message.chat.id, "➖➖➖👑➖➖➖\nUSER PANEL\n➖➖➖👑➖➖➖", reply_markup=markup)
 
+    elif data == 'panel:payment':
+        if not is_admin(call.from_user.id): return
+        markup = types.InlineKeyboardMarkup()
+        markup.add(
+            types.InlineKeyboardButton('🪙 Toggle Payment Method', callback_data='toggle_payment_method'),
+            types.InlineKeyboardButton('🏦 Edit Card Details', callback_data='edit_card_details'),
+            types.InlineKeyboardButton('⬅️Back⬅️', callback_data='back_to_panel')
+        )
+        bot.send_message(call.message.chat.id, "🛠 Payment Settings", reply_markup=markup)
+
+
+    elif data == 'toggle_payment_method':
+        if not is_admin(call.from_user.id): return
+
+        conn = sqlite3.connect("shop.db")
+        cursor = conn.cursor()
+        cursor.execute("SELECT method FROM payment_config WHERE id=1")
+        row = cursor.fetchone()
+        current = row[0] if row else 'crypto'
+
+        next_method = {
+            'crypto': 'card',
+            'card': 'both',
+            'both': 'none',
+            'none': 'crypto'
+        }[current]
+
+        cursor.execute("INSERT OR REPLACE INTO payment_config (id, method) VALUES (1, ?)", (next_method,))
+        conn.commit()
+        conn.close()
+
+        bot.send_message(call.message.chat.id, f"✅ Payment method set to: {next_method.upper()}")
+
+
+    elif data == 'edit_card_details':
+        if not is_admin(call.from_user.id): return
+        bot.send_message(call.message.chat.id, "✏️ Send new card info in format:\n\n`Card Number, Bank, Holder Name`", parse_mode="Markdown")
+        bot.register_next_step_handler(call.message, save_card_details)
+
+
+
     elif data == 'add_admin':
         if not is_admin(call.from_user.id): return
         bot.send_message(call.message.chat.id, 'Enter the user ID and username separated by a space.')
         bot.register_next_step_handler(call.message, process_add_admin)
 
+
+
     elif data == 'remove_admin':
         if not is_admin(call.from_user.id): return
         bot.send_message(call.message.chat.id, 'Enter the user ID and username separated by a space.')
         bot.register_next_step_handler(call.message, process_remove_admin)
+
 
     elif data == 'total_revenue':
         if not is_admin(call.from_user.id): return
@@ -155,7 +199,8 @@ def send_admin_panel(chat_id):
     markup = types.InlineKeyboardMarkup()
     button1 = types.InlineKeyboardButton('🎁Product Panel🎁', callback_data='panel:product')
     button2 = types.InlineKeyboardButton('🏵User Panel🏵', callback_data='panel:user')
-    markup.add(button1, button2)
+    button3 = types.InlineKeyboardButton('💳 Payment 💳 ', callback_data='panel:payment' )
+    markup.add(button1, button2, button3)
 
     bot.send_message(
         chat_id,
@@ -235,22 +280,18 @@ def update_product_details(message, product_id):
     except:
         bot.send_message(message.chat.id, "❌ Error updating product.")
 
-def make_photo_id(chat_id, file_path, caption=None, reply_markup=None, parse_mode='Markdown'):
 
+def save_card_details(message):
     try:
-        with open(file_path, 'rb') as photo:
-            sent = bot.send_photo(
-                chat_id=chat_id,
-                photo=photo,
-                caption=caption,
-                reply_markup=reply_markup,
-                parse_mode=parse_mode
-            )
-            file_id = sent.photo[-1].file_id
-            print(f"✅ [Photo Sent] file_id: {file_id}")
-            return file_id
-    except FileNotFoundError:
-        bot.send_message(chat_id, f"❌ File not found: `{file_path}`", parse_mode='Markdown')
-    except Exception as e:
-        bot.send_message(chat_id, f"❌ Error: {e}")
+        number, bank, holder = [x.strip() for x in message.text.split(",")]
+    except ValueError:
+        bot.send_message(message.chat.id, "❌ Invalid format. Please send: `Card Number, Bank, Holder`")
+        return
 
+    conn = sqlite3.connect("shop.db")
+    cursor = conn.cursor()
+    cursor.execute("UPDATE payment_config SET card_number=?, card_bank=?, card_holder=? WHERE id=1", (number, bank, holder))
+    conn.commit()
+    conn.close()
+
+    bot.send_message(message.chat.id, f"✅ Card details updated:\n\n**{number}**\n**{bank}**\n**{holder}**", parse_mode="Markdown")

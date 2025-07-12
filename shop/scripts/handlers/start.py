@@ -5,7 +5,7 @@ from shop.scripts.handlers import profile, catalog
 from shop.scripts.handlers.addadmin import add_admin, is_admin
 from shop.scripts.database import db
 from shop.scripts.database import user_base
-from shop.scripts.photo_loader import get_or_upload_photo_id
+from shop.scripts.utils.photo_loader import get_or_upload_photo_id
 
 admin_id = admin
 
